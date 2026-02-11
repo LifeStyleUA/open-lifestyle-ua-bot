@@ -1,6 +1,0 @@
-aiogram==3.*
-SQLAlchemy==2.*
-asyncpg
-pydantic
-pydantic-settings
-python-dotenv
