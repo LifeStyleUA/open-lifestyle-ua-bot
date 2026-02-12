@@ -1,18 +1,18 @@
 import os
 
-# Токен бота (будет браться из переменных окружения Render)
+# ==========================================
+# Open Lifestyle UA — Configuration File
+# Version: 1.1
+# ==========================================
+
+# Токен бота (берётся из переменных окружения Render)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# ID обязательного канала для подписки
-# ВАЖНО: заменить на реальный username канала БЕЗ @
-REQUIRED_CHANNEL = "your_channel_username"
+# Username обязательного канала (БЕЗ символа @)
+REQUIRED_CHANNEL = "open_lifestyle_ua"
 
-# Если используется ID канала вместо username
-# Пример: -1001234567890
-REQUIRED_CHANNEL_ID = None
+# ID обязательного канала
+REQUIRED_CHANNEL_ID = -1003717958620
 
-# Режим запуска (polling или webhook)
-MODE = "polling"
-
-# Проверка обязательной подписки включена
+# Включена ли проверка обязательной подписки
 SUBSCRIPTION_CHECK_ENABLED = True
