@@ -1,12 +1,11 @@
 import logging
-import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
 from aiogram.dispatcher.filters import CommandStart
 from aiogram.utils.exceptions import ChatNotFound, UserNotParticipant
 
-import config
+from app import config
 
 logging.basicConfig(level=logging.INFO)
 
@@ -23,7 +22,7 @@ async def check_subscription(user_id: int) -> bool:
 
     try:
         chat_member = await bot.get_chat_member(
-            chat_id=f"@{config.REQUIRED_CHANNEL}",
+            chat_id=config.REQUIRED_CHANNEL_ID,
             user_id=user_id
         )
 
@@ -70,7 +69,7 @@ async def start_handler(message: types.Message):
         )
         return
 
-    await message.answer("Ласкаво просимо до Open Lifestyle UA 🚀")
+    await message.answer("Ласкаво просимо до Open Lifestyle UA 🍃")
 
 
 # =========================
@@ -82,7 +81,7 @@ async def process_check_subscription(callback_query: types.CallbackQuery):
 
     if is_subscribed:
         await callback_query.message.edit_text(
-            "✅ Підписку підтверджено.\nЛаскаво просимо до Open Lifestyle UA 🚀"
+            "✅ Підписку підтверджено.\nЛаскаво просимо до Open Lifestyle UA 🍃"
         )
     else:
         await callback_query.answer("❌ Ви ще не підписані.", show_alert=True)
@@ -93,4 +92,3 @@ async def process_check_subscription(callback_query: types.CallbackQuery):
 # =========================
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
-  
