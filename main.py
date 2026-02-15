@@ -1,16 +1,16 @@
+import asyncio
 import logging
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils import executor
-from aiogram.dispatcher.filters import CommandStart
-from aiogram.utils.exceptions import ChatNotFound, UserNotParticipant
+from aiogram import Bot, Dispatcher, F
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import CommandStart
+from aiogram.enums import ChatMemberStatus
 
 import config
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=config.BOT_TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
 
 # Проверка подписки
@@ -23,58 +23,58 @@ async def check_subscription(user_id: int) -> bool:
             chat_id=f"@{config.REQUIRED_CHANNEL}",
             user_id=user_id
         )
-        return chat_member.status in ["member", "creator", "administrator"]
-
-    except (ChatNotFound, UserNotParticipant):
+        return chat_member.status in {
+            ChatMemberStatus.MEMBER,
+            ChatMemberStatus.CREATOR,
+            ChatMemberStatus.ADMINISTRATOR,
+        }
+    except Exception:
         return False
 
 
 # Клавиатура подписки
 def subscription_keyboard():
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(
-        InlineKeyboardButton(
-            text="📢 Підписатися",
-            url=f"https://t.me/{config.REQUIRED_CHANNEL}"
-        )
-    )
-    keyboard.add(
-        InlineKeyboardButton(
-            text="✅ Перевірити підписку",
-            callback_data="check_sub"
-        )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Подписаться",
+                    url=f"https://t.me/{config.REQUIRED_CHANNEL}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Проверить подписку",
+                    callback_data="check_sub"
+                )
+            ]
+        ]
     )
     return keyboard
 
 
-# Команда /start
-@dp.message_handler(CommandStart())
-async def start_handler(message: types.Message):
-    is_subscribed = await check_subscription(message.from_user.id)
-
-    if not is_subscribed:
+@dp.message(CommandStart())
+async def start_handler(message: Message):
+    if await check_subscription(message.from_user.id):
+        await message.answer("Добро пожаловать!")
+    else:
         await message.answer(
-            "❗ Для використання бота необхідно підписатися на канал.",
+            "Чтобы пользоваться ботом, подпишитесь на канал:",
             reply_markup=subscription_keyboard()
         )
-        return
-
-    await message.answer("Ласкаво просимо до Open Lifestyle UA 🍃")
 
 
-# Обработка кнопки проверки подписки
-@dp.callback_query_handler(lambda c: c.data == "check_sub")
-async def process_check_subscription(callback_query: types.CallbackQuery):
-    is_subscribed = await check_subscription(callback_query.from_user.id)
-
-    if is_subscribed:
-        await callback_query.message.edit_text(
-            "✅ Підписку підтверджено.\nЛаскаво просимо до Open Lifestyle UA 🍃"
-        )
+@dp.callback_query(F.data == "check_sub")
+async def check_sub_callback(callback):
+    if await check_subscription(callback.from_user.id):
+        await callback.message.edit_text("Спасибо за подписку! Теперь доступ открыт.")
     else:
-        await callback_query.answer("❌ Ви ще не підписані.", show_alert=True)
+        await callback.answer("Вы ещё не подписаны!", show_alert=True)
 
 
-# Запуск бота
+async def main():
+    await dp.start_polling(bot)
+
+
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    asyncio.run(main())
