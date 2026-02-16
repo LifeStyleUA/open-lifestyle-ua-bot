@@ -64,6 +64,17 @@ def subscription_keyboard():
     )
 
 
+def age_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Так", callback_data="age_yes"),
+                InlineKeyboardButton(text="❌ Ні", callback_data="age_no"),
+            ]
+        ]
+    )
+
+
 def user_type_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -82,9 +93,8 @@ def user_type_keyboard():
 # Состояния
 # ==================================================
 class Survey(StatesGroup):
-    age = State()
+    age_confirm = State()
     user_type = State()
-    goal = State()
 
 
 # ==================================================
@@ -103,11 +113,15 @@ async def start_handler(message: Message, state: FSMContext):
 
     await message.answer(
         "👋 Вітаємо в Open Lifestyle UA!\n\n"
-        "Міні-анкета займе 30 секунд 😊"
+        "Перед початком невелике уточнення."
     )
 
-    await message.answer("1️⃣ Скільки вам років?")
-    await state.set_state(Survey.age)
+    await message.answer(
+        "🔞 Вам вже є 21?",
+        reply_markup=age_keyboard()
+    )
+
+    await state.set_state(Survey.age_confirm)
 
 
 # ==================================================
@@ -125,24 +139,23 @@ async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
 
 
 # ==================================================
-# ВОЗРАСТ
+# ПОДТВЕРЖДЕНИЕ ВОЗРАСТА
 # ==================================================
-@dp.message(Survey.age)
-async def process_age(message: Message, state: FSMContext):
-    if not message.text.isdigit():
-        await message.answer("Будь ласка, введіть вік числом.")
+@dp.callback_query(Survey.age_confirm, F.data.startswith("age_"))
+async def process_age(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+
+    if callback.data == "age_no":
+        await callback.message.edit_text(
+            "⛔ На жаль, бот доступний лише для користувачів 21+."
+        )
+        await state.clear()
         return
 
-    age = int(message.text)
-
-    if age < 18 or age > 100:
-        await message.answer("Бот доступний лише для 18+ 😉")
-        return
-
-    await state.update_data(age=age)
-
-    await message.answer(
-        "2️⃣ Ви: Пара? Жінка? Чоловік?",
+    # Если age_yes
+    await callback.message.edit_text("2️⃣ Ви: Пара? Жінка? Чоловік?")
+    await callback.message.answer(
+        "Оберіть варіант нижче:",
         reply_markup=user_type_keyboard()
     )
 
@@ -166,25 +179,10 @@ async def process_user_type(callback: CallbackQuery, state: FSMContext):
 
     await state.update_data(user_type=user_type)
 
-    await callback.message.edit_text("3️⃣ Яка ваша головна ціль зараз?")
-    await state.set_state(Survey.goal)
-
-
-# ==================================================
-# ЦІЛЬ
-# ==================================================
-@dp.message(Survey.goal)
-async def process_goal(message: Message, state: FSMContext):
-    await state.update_data(goal=message.text)
-
-    data = await state.get_data()
-
-    await message.answer(
-        "✅ Дякуємо за відповіді!\n\n"
-        f"📌 Вік: {data['age']}\n"
-        f"📌 Ви: {data['user_type']}\n"
-        f"📌 Ціль: {data['goal']}\n\n"
-        "Ми раді, що ви з нами 💚"
+    await callback.message.edit_text(
+        f"✅ Дякуємо!\n\n"
+        f"📌 Ви: {user_type}\n\n"
+        "Раді, що ви з нами 💚"
     )
 
     await state.clear()
