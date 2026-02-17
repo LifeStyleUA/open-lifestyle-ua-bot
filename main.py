@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
     Message,
@@ -13,57 +15,22 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 
-import config
+from aiohttp import web
 
 logging.basicConfig(level=logging.INFO)
 
-bot = Bot(token=config.BOT_TOKEN)
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL")  # Render автоматически даёт URL
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 
 # ==================================================
-# Проверка подписки
+# Клавиатуры
 # ==================================================
-async def check_subscription(user_id: int) -> bool:
-    if not config.SUBSCRIPTION_CHECK_ENABLED:
-        return True
-
-    try:
-        member = await bot.get_chat_member(
-            chat_id=f"@{config.REQUIRED_CHANNEL}",
-            user_id=user_id
-        )
-
-        return member.status in {
-            ChatMemberStatus.MEMBER,
-            ChatMemberStatus.ADMINISTRATOR,
-            ChatMemberStatus.CREATOR,
-        }
-
-    except Exception as e:
-        logging.error(f"Subscription check error: {e}")
-        return False
-
-
-def subscription_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🔔 Підписатися",
-                    url=f"https://t.me/{config.REQUIRED_CHANNEL}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="✅ Перевірити підписку",
-                    callback_data="check_sub"
-                )
-            ]
-        ]
-    )
-
-
 def age_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -104,13 +71,6 @@ class Survey(StatesGroup):
 async def start_handler(message: Message, state: FSMContext):
     await state.clear()
 
-    if not await check_subscription(message.from_user.id):
-        await message.answer(
-            "Щоб користуватися ботом, підпишіться на канал:",
-            reply_markup=subscription_keyboard()
-        )
-        return
-
     await message.answer(
         "👋 Вітаємо в Open Lifestyle UA!\n\n"
         "Перед початком невелике уточнення."
@@ -125,21 +85,7 @@ async def start_handler(message: Message, state: FSMContext):
 
 
 # ==================================================
-# Проверка подписки
-# ==================================================
-@dp.callback_query(F.data == "check_sub")
-async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-
-    if await check_subscription(callback.from_user.id):
-        await callback.message.edit_text("🎉 Дякуємо за підписку! Починаємо.")
-        await start_handler(callback.message, state)
-    else:
-        await callback.answer("Ви ще не підписані ❗", show_alert=True)
-
-
-# ==================================================
-# ПОДТВЕРЖДЕНИЕ ВОЗРАСТА
+# Возраст
 # ==================================================
 @dp.callback_query(Survey.age_confirm, F.data.startswith("age_"))
 async def process_age(callback: CallbackQuery, state: FSMContext):
@@ -147,12 +93,11 @@ async def process_age(callback: CallbackQuery, state: FSMContext):
 
     if callback.data == "age_no":
         await callback.message.edit_text(
-            "⛔ На жаль, бот доступний лише для користувачів 21+."
+            "⛔ Бот доступний лише для користувачів 21+."
         )
         await state.clear()
         return
 
-    # Если age_yes
     await callback.message.edit_text("2️⃣ Ви: Пара? Жінка? Чоловік?")
     await callback.message.answer(
         "Оберіть варіант нижче:",
@@ -163,7 +108,7 @@ async def process_age(callback: CallbackQuery, state: FSMContext):
 
 
 # ==================================================
-# ТИП КОРИСТУВАЧА
+# Тип пользователя
 # ==================================================
 @dp.callback_query(Survey.user_type, F.data.startswith("type_"))
 async def process_user_type(callback: CallbackQuery, state: FSMContext):
@@ -177,8 +122,6 @@ async def process_user_type(callback: CallbackQuery, state: FSMContext):
 
     user_type = mapping.get(callback.data)
 
-    await state.update_data(user_type=user_type)
-
     await callback.message.edit_text(
         f"✅ Дякуємо!\n\n"
         f"📌 Ви: {user_type}\n\n"
@@ -189,19 +132,27 @@ async def process_user_type(callback: CallbackQuery, state: FSMContext):
 
 
 # ==================================================
-# FALLBACK
+# WEBHOOK
 # ==================================================
-@dp.message()
-async def fallback_handler(message: Message):
-    await message.answer("Напишіть /start щоб почати 😊")
+async def on_startup(app):
+    await bot.set_webhook(WEBHOOK_URL)
+    logging.info(f"Webhook set to {WEBHOOK_URL}")
 
 
-# ==================================================
-# Запуск
-# ==================================================
-async def main():
-    await dp.start_polling(bot)
+async def on_shutdown(app):
+    await bot.delete_webhook()
+    await bot.session.close()
+
+
+def main():
+    app = web.Application()
+    app.router.add_post(WEBHOOK_PATH, dp.webhook_handler())
+
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
+
+    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
