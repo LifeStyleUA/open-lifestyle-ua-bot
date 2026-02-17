@@ -1,22 +1,33 @@
 import asyncio
 import logging
+import os
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
     Message,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    CallbackQuery
+    CallbackQuery,
 )
 from aiogram.filters import CommandStart
 from aiogram.enums import ChatMemberStatus
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
+
+from aiohttp import web
+
 import config
 
 logging.basicConfig(level=logging.INFO)
 
-bot = Bot(token=config.BOT_TOKEN)
+BOT_TOKEN = config.BOT_TOKEN
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_SECRET = "supersecret"  # можно любой строкой
+WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL")
+WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 
@@ -106,16 +117,10 @@ async def start_handler(message: Message, state: FSMContext):
     if await check_subscription(message.from_user.id):
         await message.answer(
             "👋 Вітаємо в Open Lifestyle UA!\n\n"
-            "Перед початком невелике уточнення."
-        )
-
-        await message.answer(
             "🔞 Вам вже є 21?",
             reply_markup=age_keyboard()
         )
-
         await state.set_state(Survey.age_confirm)
-
     else:
         await message.answer(
             "Щоб користуватися ботом, підпишіться на канал:",
@@ -123,9 +128,6 @@ async def start_handler(message: Message, state: FSMContext):
         )
 
 
-# ==================================================
-# ПРОВЕРКА ПОДПИСКИ КНОПКА
-# ==================================================
 @dp.callback_query(F.data == "check_sub")
 async def check_sub_callback(callback: CallbackQuery):
     if await check_subscription(callback.from_user.id):
@@ -138,9 +140,6 @@ async def check_sub_callback(callback: CallbackQuery):
         await callback.answer("❌ Ви ще не підписані!", show_alert=True)
 
 
-# ==================================================
-# ВОЗРАСТ
-# ==================================================
 @dp.callback_query(Survey.age_confirm, F.data.startswith("age_"))
 async def process_age(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -161,9 +160,6 @@ async def process_age(callback: CallbackQuery, state: FSMContext):
     await state.set_state(Survey.user_type)
 
 
-# ==================================================
-# ТИП ПОЛЬЗОВАТЕЛЯ
-# ==================================================
 @dp.callback_query(Survey.user_type, F.data.startswith("type_"))
 async def process_user_type(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -186,11 +182,39 @@ async def process_user_type(callback: CallbackQuery, state: FSMContext):
 
 
 # ==================================================
-# ЗАПУСК
+# WEBHOOK (AIROGRAM 3 ПРАВИЛЬНО)
 # ==================================================
-async def main():
-    await dp.start_polling(bot)
+async def on_startup(app):
+    await bot.set_webhook(
+        WEBHOOK_URL,
+        secret_token=WEBHOOK_SECRET
+    )
+    logging.info(f"Webhook set to {WEBHOOK_URL}")
+
+
+async def on_shutdown(app):
+    await bot.delete_webhook()
+    await bot.session.close()
+
+
+async def handle_webhook(request):
+    if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != WEBHOOK_SECRET:
+        return web.Response(status=403)
+
+    update = await request.json()
+    await dp.feed_webhook_update(bot, update)
+    return web.Response()
+
+
+def main():
+    app = web.Application()
+    app.router.add_post(WEBHOOK_PATH, handle_webhook)
+
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
+
+    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
